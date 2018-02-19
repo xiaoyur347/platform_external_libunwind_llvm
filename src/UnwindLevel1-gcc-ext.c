@@ -98,6 +98,30 @@ _LIBUNWIND_EXPORT void *_Unwind_FindEnclosingFunction(void *pc) {
     return NULL;
 }
 
+#define DISABLE_CALL_PERSONALITY
+#ifdef DISABLE_CALL_PERSONALITY
+const uint32_t*
+decode_eht_personality(const uint32_t* data, size_t* off, size_t* len) {
+  // 6.2: Generic Model
+  // EHT entry is a prel31 pointing to the PR, followed by data understood only
+  // by the personality routine. Since EHABI doesn't guarantee the location or
+  // availability of the unwind opcodes in the generic model, we have to check
+  // for them on a case-by-case basis:
+  _Unwind_Reason_Code __gxx_personality_v0(int version, _Unwind_Action actions,
+                                            uint64_t exceptionClass,
+                                            _Unwind_Exception* unwind_exception,
+                                            _Unwind_Context* context);
+  void *PR = (void*)signExtendPrel31(*data);
+  if (PR == (void*)&__gxx_personality_v0) {
+    *off = 1; // First byte is size data.
+    *len = (((data[1] >> 24) & 0xff) + 1) * 4;
+  } else
+    return NULL;
+  data++; // Skip the first word, which is the prel31 offset.
+  return data;
+}
+#endif // DISABLE_CALL_PERSONALITY
+
 /// Walk every frame and call trace function at each one.  If trace function
 /// returns anything other than _URC_NO_REASON, then walk is terminated.
 _LIBUNWIND_EXPORT _Unwind_Reason_Code
@@ -140,6 +164,7 @@ _Unwind_Backtrace(_Unwind_Trace_Fn callback, void *ref) {
       // we have to call personality functions with (_US_VIRTUAL_UNWIND_FRAME |
       // _US_FORCE_UNWIND) state.
 
+#ifndef DISABLE_CALL_PERSONALITY
       // Create a mock exception object for force unwinding.
       _Unwind_Exception ex;
       ex.exception_class = 0x434C4E47554E5700; // CLNGUNW\0
@@ -153,6 +178,18 @@ _Unwind_Backtrace(_Unwind_Trace_Fn callback, void *ref) {
               _URC_CONTINUE_UNWIND) {
         return _URC_END_OF_STACK;
       }
+#else // DISABLE_CALL_PERSONALITY
+      size_t off, len;
+      unwindInfo = decode_eht_personality(unwindInfo, &off, &len);
+      if (unwindInfo == NULL) {
+        return _URC_FAILURE;
+      }
+
+      result = _Unwind_VRS_Interpret(context, unwindInfo, off, len);
+      if (result != _URC_CONTINUE_UNWIND) {
+        return _URC_END_OF_STACK;
+      }
+#endif // DISABLE_CALL_PERSONALITY
     } else {
       size_t off, len;
       unwindInfo = decode_eht_entry(unwindInfo, &off, &len);
