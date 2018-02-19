@@ -10,10 +10,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include <stdint.h>
+#include <inttypes.h>
 #include <stdbool.h>
-#include <stdlib.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "libunwind.h"
 #include "unwind.h"
@@ -25,12 +26,15 @@
 ///  Called by __cxa_rethrow().
 _LIBUNWIND_EXPORT _Unwind_Reason_Code
 _Unwind_Resume_or_Rethrow(_Unwind_Exception *exception_object) {
+#if LIBCXXABI_ARM_EHABI
   _LIBUNWIND_TRACE_API("_Unwind_Resume_or_Rethrow(ex_obj=%p), "
                        "private_1=%ld\n",
                        exception_object,
-#if LIBCXXABI_ARM_EHABI
                        (long)exception_object->unwinder_cache.reserved1);
 #else
+  _LIBUNWIND_TRACE_API("_Unwind_Resume_or_Rethrow(ex_obj=%p), "
+                       "private_1=%ld\n",
+                       exception_object,
                        (long)exception_object->private_1);
 #endif
 
@@ -145,14 +149,14 @@ _Unwind_Backtrace(_Unwind_Trace_Fn callback, void *ref) {
     // debugging
     if (_LIBUNWIND_TRACING_UNWINDING) {
       char functionName[512];
-      unw_proc_info_t frameInfo;
+      unw_proc_info_t frame;
       unw_word_t offset;
       unw_get_proc_name(&cursor, functionName, 512, &offset);
-      unw_get_proc_info(&cursor, &frameInfo);
+      unw_get_proc_info(&cursor, &frame);
       _LIBUNWIND_TRACE_UNWINDING(
           " _backtrace: start_ip=0x%llX, func=%s, lsda=0x%llX, context=%p\n",
-          (long long)frameInfo.start_ip, functionName, (long long)frameInfo.lsda,
-          &cursor);
+          (long long)frame.start_ip, functionName,
+          (long long)frame.lsda, &cursor);
     }
 
     // call trace function with this frame
@@ -193,8 +197,8 @@ _LIBUNWIND_EXPORT uintptr_t _Unwind_GetCFA(struct _Unwind_Context *context) {
   unw_cursor_t *cursor = (unw_cursor_t *)context;
   unw_word_t result;
   unw_get_reg(cursor, UNW_REG_SP, &result);
-  _LIBUNWIND_TRACE_API("_Unwind_GetCFA(context=%p) => 0x%llX\n", context,
-                  (uint64_t) result);
+  _LIBUNWIND_TRACE_API("_Unwind_GetCFA(context=%p) => 0x%" PRIx64 "\n", context,
+                       (uint64_t)result);
   return (uintptr_t)result;
 }
 
