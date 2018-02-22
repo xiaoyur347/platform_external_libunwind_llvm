@@ -34,7 +34,7 @@ namespace libunwind {
 #include "dwarf2.h"
 #include "Registers.hpp"
 
-#if LIBCXXABI_ARM_EHABI
+#if _LIBUNWIND_ARM_EHABI
 #ifdef __linux__
 
 typedef long unsigned int *_Unwind_Ptr;
@@ -55,11 +55,18 @@ struct EHTEntry {
 extern EHTEntry __exidx_start;
 extern EHTEntry __exidx_end;
 #endif // !defined(_LIBUNWIND_IS_BAREMETAL)
-#endif  // LIBCXXABI_ARM_EHABI
+#endif // _LIBUNWIND_ARM_EHABI
 
-#if defined(__linux__)
+#if defined(__CloudABI__) || defined(__FreeBSD__) || defined(__linux__)
 #if _LIBUNWIND_SUPPORT_DWARF_UNWIND && _LIBUNWIND_SUPPORT_DWARF_INDEX
 #include <link.h>
+// Macro for machine-independent access to the ELF program headers. This
+// macro is not available on some systems (e.g., FreeBSD). On these
+// systems the data structures are just called Elf_XXX. Define ElfW()
+// locally.
+#if !defined(ElfW)
+#define ElfW(type) Elf_##type
+#endif
 #include "EHHeaderParser.hpp"
 #endif
 #endif
@@ -85,7 +92,7 @@ struct UnwindInfoSections {
   uintptr_t       compact_unwind_section;
   uintptr_t       compact_unwind_section_length;
 #endif
-#if LIBCXXABI_ARM_EHABI
+#if _LIBUNWIND_ARM_EHABI
   uintptr_t       arm_section;
   uintptr_t       arm_section_length;
 #endif
@@ -350,7 +357,7 @@ inline bool LocalAddressSpace::findUnwindSections(pint_t targetAddr,
     info.compact_unwind_section_length = dyldInfo.compact_unwind_section_length;
     return true;
   }
-#elif LIBCXXABI_ARM_EHABI
+#elif _LIBUNWIND_ARM_EHABI
  #ifdef _LIBUNWIND_IS_BAREMETAL
   // Bare metal is statically linked, so no need to ask the dynamic loader
   info.arm_section =        (uintptr_t)(&__exidx_start);
@@ -388,8 +395,15 @@ inline bool LocalAddressSpace::findUnwindSections(pint_t targetAddr,
           return false;
         }
 
-        for (ElfW(Half) i = 0; i < pinfo->dlpi_phnum; i++) {
-          const ElfW(Phdr) *phdr = &pinfo->dlpi_phdr[i];
+#if !defined(Elf_Half)
+        typedef ElfW(Half) Elf_Half;
+#endif
+#if !defined(Elf_Phdr)
+        typedef ElfW(Phdr) Elf_Phdr;
+#endif
+
+        for (Elf_Half i = 0; i < pinfo->dlpi_phnum; i++) {
+          const Elf_Phdr *phdr = &pinfo->dlpi_phdr[i];
           if (phdr->p_type == PT_LOAD) {
             uintptr_t begin = pinfo->dlpi_addr + phdr->p_vaddr;
             uintptr_t end = begin + phdr->p_memsz;

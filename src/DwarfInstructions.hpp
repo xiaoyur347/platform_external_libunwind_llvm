@@ -170,12 +170,12 @@ int DwarfInstructions<A, R>::stepWithDwarf(A &addressSpace, pint_t pc,
       const int lastReg = R::lastDwarfRegNum();
       assert((int)CFI_Parser<A>::kMaxRegisterNumber > lastReg &&
              "register range too large");
-      assert(lastReg <= (int)cieInfo.returnAddressRegister &&
+      assert(lastReg >= (int)cieInfo.returnAddressRegister &&
              "register range does not contain return address register");
       for (int i = 0; i <= lastReg; ++i) {
-         if (prolog.savedRegisters[i].location !=
-             CFI_Parser<A>::kRegisterUnused) {
-           if (registers.validFloatRegister(i))
+        if (prolog.savedRegisters[i].location !=
+            CFI_Parser<A>::kRegisterUnused) {
+          if (registers.validFloatRegister(i))
             newRegisters.setFloatRegister(
                 i, getSavedFloatRegister(addressSpace, registers, cfa,
                                          prolog.savedRegisters[i]));

@@ -438,8 +438,22 @@ public:
 
 private:
 
-#if LIBCXXABI_ARM_EHABI
+#if _LIBUNWIND_ARM_EHABI
   bool getInfoFromEHABISection(pint_t pc, const UnwindInfoSections &sects);
+
+  int stepWithEHABI() {
+    size_t len = 0;
+    size_t off = 0;
+    // FIXME: Calling decode_eht_entry() here is violating the libunwind
+    // abstraction layer.
+    const uint32_t *ehtp =
+        decode_eht_entry(reinterpret_cast<const uint32_t *>(_info.unwind_info),
+                         &off, &len);
+    if (_Unwind_VRS_Interpret((_Unwind_Context *)this, ehtp, off, len) !=
+            _URC_CONTINUE_UNWIND)
+      return UNW_STEP_END;
+    return UNW_STEP_SUCCESS;
+  }
 #endif
 
 #if _LIBUNWIND_SUPPORT_DWARF_UNWIND
@@ -620,7 +634,7 @@ template <typename A, typename R> bool UnwindCursor<A, R>::isSignalFrame() {
   return _isSignalFrame;
 }
 
-#if LIBCXXABI_ARM_EHABI
+#if _LIBUNWIND_ARM_EHABI
 struct EHABIIndexEntry {
   uint32_t functionOffset;
   uint32_t data;
@@ -731,7 +745,7 @@ bool UnwindCursor<A, R>::getInfoFromEHABISection(
   //   isSingleWordEHT -- whether the entry is in the index.
   unw_word_t personalityRoutine = 0xbadf00d;
   bool scope32 = false;
-  uintptr_t lsda = 0xbadf00d;
+  uintptr_t lsda;
 
   // If the high bit in the exception handling table entry is set, the entry is
   // in compact form (section 6.3 EHABI).
@@ -744,16 +758,19 @@ bool UnwindCursor<A, R>::getInfoFromEHABISection(
         personalityRoutine = (unw_word_t) &__aeabi_unwind_cpp_pr0;
         extraWords = 0;
         scope32 = false;
+        lsda = isSingleWordEHT ? 0 : (exceptionTableAddr + 4);
         break;
       case 1:
         personalityRoutine = (unw_word_t) &__aeabi_unwind_cpp_pr1;
         extraWords = (exceptionTableData & 0x00ff0000) >> 16;
         scope32 = false;
+        lsda = exceptionTableAddr + (extraWords + 1) * 4;
         break;
       case 2:
         personalityRoutine = (unw_word_t) &__aeabi_unwind_cpp_pr2;
         extraWords = (exceptionTableData & 0x00ff0000) >> 16;
         scope32 = true;
+        lsda = exceptionTableAddr + (extraWords + 1) * 4;
         break;
       default:
         _LIBUNWIND_ABORT("unknown personality routine");
@@ -1146,7 +1163,7 @@ bool UnwindCursor<A, R>::getInfoFromCompactEncodingSection(pint_t pc,
 template <typename A, typename R>
 void UnwindCursor<A, R>::setInfoBasedOnIPRegister(bool isReturnAddress) {
   pint_t pc = (pint_t)this->getReg(UNW_REG_IP);
-#if LIBCXXABI_ARM_EHABI
+#if _LIBUNWIND_ARM_EHABI
   // Remove the thumb bit so the IP represents the actual instruction address.
   // This matches the behaviour of _Unwind_GetIP on arm.
   pc &= (pint_t)~0x1;
@@ -1196,7 +1213,7 @@ void UnwindCursor<A, R>::setInfoBasedOnIPRegister(bool isReturnAddress) {
     }
 #endif
 
-#if LIBCXXABI_ARM_EHABI
+#if _LIBUNWIND_ARM_EHABI
     // If there is ARM EHABI unwind info, look there next.
     if (sects.arm_section != 0 && this->getInfoFromEHABISection(pc, sects))
       return;
@@ -1280,12 +1297,12 @@ int UnwindCursor<A, R>::step() {
   result = this->stepWithCompactEncoding();
 #elif _LIBUNWIND_SUPPORT_DWARF_UNWIND
   result = this->stepWithDwarfFDE();
-#elif LIBCXXABI_ARM_EHABI
-  result = UNW_STEP_SUCCESS;
+#elif _LIBUNWIND_ARM_EHABI
+  result = this->stepWithEHABI();
 #else
   #error Need _LIBUNWIND_SUPPORT_COMPACT_UNWIND or \
               _LIBUNWIND_SUPPORT_DWARF_UNWIND or \
-              LIBCXXABI_ARM_EHABI
+              _LIBUNWIND_ARM_EHABI
 #endif
 
   // update info based on new PC
