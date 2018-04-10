@@ -99,6 +99,19 @@ _LIBUNWIND_EXPORT void *_Unwind_FindEnclosingFunction(void *pc) {
     return NULL;
 }
 
+#if _LIBUNWIND_ARM_EHABI
+static _Unwind_Reason_Code continue_unwind(_Unwind_Exception* unwind_exception,
+                                           _Unwind_Context* context)
+{
+  _LIBUNWIND_EXPORT _Unwind_Reason_Code
+  __gnu_unwind_frame(_Unwind_Exception *exception_object,
+      struct _Unwind_Context *context);
+  if (__gnu_unwind_frame(unwind_exception, context) != _URC_OK)
+      return _URC_FAILURE;
+  return _URC_CONTINUE_UNWIND;
+}
+#endif
+
 /// Walk every frame and call trace function at each one.  If trace function
 /// returns anything other than _URC_NO_REASON, then walk is terminated.
 _LIBUNWIND_EXPORT _Unwind_Reason_Code
@@ -150,10 +163,17 @@ _Unwind_Backtrace(_Unwind_Trace_Fn callback, void *ref) {
     if (handler == NULL) {
       return _URC_END_OF_STACK;
     }
+#if 0
     if (handler(_US_VIRTUAL_UNWIND_FRAME | _US_FORCE_UNWIND, &ex, context) !=
             _URC_CONTINUE_UNWIND) {
       return _URC_END_OF_STACK;
     }
+#else
+    result = continue_unwind(&ex, context);
+    if (result != _URC_CONTINUE_UNWIND) {
+      return _URC_END_OF_STACK;
+    }
+#endif
 #endif // _LIBUNWIND_ARM_EHABI
 
     // debugging
